@@ -18,7 +18,7 @@ from bs4 import BeautifulSoup, ResultSet, Tag
 
 
 class ScrapeConfig:
-    asession_key = ('ASPSESSIONIDQCQCBTTR', 'ASPSESSIONIDSCTBCSSQ')[1]
+    asession_key = ('ASPSESSIONIDQCQCBTTR', 'ASPSESSIONIDSCTBCSSQ')[1] # apparently this can change...
     msession_key = 'MoodleSession'
 
     headers: dict[str, str] = {
@@ -30,8 +30,9 @@ class ScrapeConfig:
 
 
     def __init__(self) -> None:
-        self.asession = str()
+        self.asession: Union[str, None] = None
         # self.dir = "Courses/"
+        self.outdir: Union[str, None] = None
         self.msession = str()
         self.preview = True
         self.url = str()
@@ -41,19 +42,27 @@ class ScrapeConfig:
 
 
     def add_cookies(self, session: requests.Session) -> None:
-        session.cookies.set(self.asession_key, self.asession)
+        if self.asession:
+            session.cookies.set(self.asession_key, self.asession)
         session.cookies.set(self.msession_key, self.msession)
 
     @staticmethod
     def parse_arguments():
         config = ScrapeConfig()
 
-        args = argparse.ArgumentParser(description="Scrapes Moodle!")
+        example = 'Example: py scraper.py -ms "a1b2c3d4e5f5g7h8l9k0" '
+        example += '"http://web3.carlingfor-h.schools.nsw.edu.au/' + \
+            'applications/moodle2/course/view.php?id=412"'
+
+        args = argparse.ArgumentParser(description="Scrapes Moodle!", epilog=example)
 
         args.add_argument(
-            "-as", "--asession", help="ASP session cookies value", type=str, required=True)
+            "-as", "--asession", help="ASP session cookies value", type=str, required=False)
         args.add_argument(
             "-ms", "--msession", help="Moodle session cookies value", type=str, required=True)
+
+        args.add_argument(
+            "-out", "--outdir", help="Custom output directory", type=str, required=False)
 
         args.add_argument(
             "-t", "--timeout", help="The connection timeout", type=int, default=5
@@ -74,9 +83,13 @@ class ScrapeConfig:
 
         parsed_args = args.parse_args()
 
+        if parsed_args.outdir:
+            parsed_args.outdir = str(parsed_args.outdir).replace(os.sep, '/')
+
         for attr in vars(config):
             value = getattr(parsed_args, attr)
-            assert value is not None
+            if attr not in ["asession", "outdir"]:
+                assert value is not None
             setattr(config, attr, value)
         
         # if not config.dir.startswith("Courses/"):
@@ -409,17 +422,24 @@ class Page:
 
         escape = lambda p: re.sub(r"[^a-zA-Z0-9_ \-%@!~`\(\)\[\]\:\,\.\?\{\}=+\$]", '-', p)
 
-        output_dir = escape(cast(Tag, active_node.find("a")).text)
-        while True:
-            parent_list = active_node.find_parent("ul", role="group")
-            assert parent_list is not None
-            parent_node = cast(Tag, parent_list.find_previous_sibling(
-                "p", class_=["tree_item", "branch"]))
-            dir_name = parent_node.text
-            output_dir = escape(dir_name) + '/' + output_dir
-            if dir_name == "Courses":
-                break
-            active_node = parent_node
+        if config.outdir:
+            output_dir = config.outdir
+        else:
+            output_dir = escape(cast(Tag, active_node.find("a")).text)
+            while True:
+                parent_list = active_node.find_parent("ul", role="group")
+                if parent_list is None:
+                    print("ERROR: Failed to detect couse output directory.")
+                    print("\tPlease specify it manually using -out/--outdir.")
+                    exit(-2)
+                parent_node = cast(Tag, parent_list.find_previous_sibling(
+                    "p", class_=["tree_item", "branch"]))
+                dir_name = parent_node.text
+                output_dir = escape(dir_name) + '/' + output_dir
+                if dir_name == "Courses":
+                    break
+                active_node = parent_node
+            output_dir = 'moodle/' + output_dir
         
         print(f'Outputting to "{output_dir}"...')
 
@@ -468,7 +488,7 @@ class Page:
         page = Page(page_title.text)
 
         page.topics = topics
-        page.__output_dir = page.__output_dir + '/' + output_dir
+        page.__output_dir = output_dir
 
         return page
 
