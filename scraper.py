@@ -3,9 +3,10 @@
 # Description: Scraper script for CHS Moodle before it gets taken down
 # Author: https://github.com/abu-co/
 # Year of creation: 2022
+# Portability: I don't have time for this
+# Maintainability: Who cares
 
 import argparse
-from datetime import datetime
 from enum import Enum
 import os
 import re
@@ -37,6 +38,7 @@ class ScrapeConfig:
         self.preview = True
         self.url = str()
         self.timeout = -1
+        self.useid = False
         self.maxtry = -1
         self.debug = False
 
@@ -68,6 +70,9 @@ class ScrapeConfig:
             "-t", "--timeout", help="The connection timeout", type=int, default=5
         )
         args.add_argument(
+            "--useid", help="Uses resource IDs to prevent naming conflicts (recommended)", action="store_true"
+        )
+        args.add_argument(
             "--maxtry", help="Maximum retry count", default=-1
         )
 
@@ -95,6 +100,9 @@ class ScrapeConfig:
         # if not config.dir.startswith("Courses/"):
         #     print("Error: page dir should always start with \"Courses/\"!")
         #     exit(-1)
+
+        if not config.useid:
+            print("Warning: not using --useid may cause file name conflicts.\n")
 
         return config
 
@@ -250,6 +258,17 @@ class TopicResource:
 
         response: requests.Response
 
+
+        def has_file(regex: str):
+            filename_pattern = re.compile(regex)
+            for file in os.listdir(output_dir):
+                if filename_pattern.match(file):
+                    return file
+            return None
+
+        filename_postfix_regex = r'-\d{8}' + (self.get_id() if config.useid else r'(?:~\d{1,5})')
+
+
         if not config.debug:
             print_fail = lambda r: \
                 print(">>> ERROR: Failed to fetch resourse for %s: %d!" % 
@@ -280,15 +299,11 @@ class TopicResource:
 
                 if self.type == TopicResourceType.FOLDER:
                     if head_only:
-                        self.filename = self.name + "-" + datetime.today().strftime('%Y%m%d') + '.zip'
                         print(">>> Unable to check folders using HEAD:" + 
-                            " assuming to be %s and skipping..." % self.filename)
-                        if not os.path.exists(output_dir + '/' + self.filename):
-                            # print(">>> WARNING: couldn't find local copy! Assuming to be empty...")
-                            # self.is_empty_folder = True
-                            pass
-                        else:
-                            return 0
+                            " assuming to be %s..." % self.filename)
+                        if existing_file := has_file(filename_postfix_regex + '.zip'):
+                            self.filename = existing_file
+                            return 0 # exists already
 
                     form_action = "https://web3.carlingfor-h.schools.nsw.edu.au/applications/moodle2/mod/folder/download_folder.php"
                     form = soup.find("form", {"action": form_action})
@@ -334,8 +349,16 @@ class TopicResource:
             print(">>> ERROR: Invalid response received!", file=stderr)
             return 0;
 
-        self.filename = cast(re.Match[str], re.search(
-            r'filename\s*?=\s*?"([^"]+)"', disposition)).group(1)
+        self.filename = cast(str, cast(re.Match[str], re.search(
+            r'filename\s*?=\s*?"([^"]+)"', disposition)).group(1))
+        if config.useid:
+            ext_pos = self.filename.rfind('.')
+            if ext_pos <= -1:
+                ext_pos = len(self.filename)
+            ext = self.filename[ext_pos:]
+            self.filename = self.filename[:ext_pos] + "~" + self.get_id() + ext
+
+
         output_file = output_dir + '/' + self.get_local_filename()
         file_size = response.headers.get("Content-Length")
 
@@ -536,6 +559,8 @@ class Page:
         if head_only:
             print("Directory already exists: enabling HEAD only mode...")
         
+        print()
+
         download_size = 0
 
         resource_count = 0
@@ -545,7 +570,9 @@ class Page:
                     continue
                 download_size += res.download(config, session, self.__output_dir, head_only = head_only)
                 resource_count += 1
+                print()
                 # break ####
+        print()
         print("> Fetched %d resources." % resource_count)
 
         return download_size
