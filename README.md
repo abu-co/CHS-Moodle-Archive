@@ -12,4 +12,22 @@
 
 <p align="center">
   <img alt="R.I.P Moodle." src="media/rip.png" width="60%" />
+  <br />
+  &#x2E3B; &#128613; &#x25e6; &bull; &#x25e6; &#128615; &#x2E3B;
+  <br />
+  <i>In this repository are some files crawled from 
+    <a href="http://web3.carlingfor-h.schools.nsw.edu.au/applications/moodle2/" title="Go to the original Moodle (if it still exists)">Moodle</a>,
+    <br />
+    Which will soon
+    <br />
+    Be taken down.
+    <br />
+    But before it is,
+    <br />
+    You can still access it 
+    <br />
+    Using the school internet
+    <br />
+    Or this <a href="https://github.com/abu-co/CHS-Moodle-Fixer">browser extension</a> which I have made.
+  </i>
 </p>
